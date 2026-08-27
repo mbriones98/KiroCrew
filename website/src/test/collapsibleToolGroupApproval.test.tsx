@@ -137,6 +137,22 @@ describe('CollapsibleToolGroup batch multi-select (Req 4.1-4.4)', () => {
     expect(onApproveBatch).not.toHaveBeenCalled()
   })
 
+  it('previews EVERY pending command when batching (not just the newest), closing the approve-unseen gap', () => {
+    renderWithProviders(
+      <CollapsibleToolGroup count={3} hasPermission autoExpand isRunning pendingPermCount={3}
+        permissionMeta={{ tool_input: 'cmd-charlie' }}
+        permissionMetas={[{ tool_input: 'cmd-alpha' }, { tool_input: 'cmd-bravo' }, { tool_input: 'cmd-charlie' }]}
+        onApproveBatch={vi.fn(() => Promise.resolve())}>
+        <div>zzq-child</div>
+      </CollapsibleToolGroup>,
+    )
+    // All three pending commands are shown so "Approve all 3" is not blind —
+    // the earlier calls (alpha, bravo), not just the newest (charlie), render.
+    expect(screen.getByText('cmd-alpha')).toBeInTheDocument()
+    expect(screen.getByText('cmd-bravo')).toBeInTheDocument()
+    expect(screen.getByText('cmd-charlie')).toBeInTheDocument()
+  })
+
   it('rolls the row back to actionable when a batch decision fails', async () => {
     const onApproveBatch = vi.fn(() => Promise.reject(new Error('boom')))
     vi.spyOn(console, 'error').mockImplementation(() => {})
