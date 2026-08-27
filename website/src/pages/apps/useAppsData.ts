@@ -27,6 +27,7 @@ import {
   type InstalledApp, type RegistryApp,
 } from '../../components/appstore/types'
 import { isBuiltinServerRow } from '../../components/appstore/mergeBuiltinRow'
+import { buildUpdateMap, isUpdatable, keepInLibrary } from './updatables'
 
 /**
  * One published featured section, as it arrives from the registry endpoint.
@@ -158,21 +159,13 @@ export function pickFeatured(apps: RegistryApp[]): RegistryApp[] {
 /**
  * Whether an installed app belongs in the Library list.
  *
- * A disabled builtin is normally hidden: the wheel ships ~20 of them default-off
- * and listing every one would bury the apps a reader actually uses. An app that
- * REPLACES a host surface is the exception, because it is the only class a reader
- * can turn off and then need to find again -- its own copy tells them to disable
- * it to get the old surface back, and with the row gone from Library and no
- * catalog row in Discover that would be a one-way switch. Keyed on `ui.overlays`
- * rather than on the app id so the rule belongs to the capability, not to a name.
- *
- * Exported so its test exercises this predicate rather than a copy of it.
+ * MOVED to `updatables.ts` (PR2): the sidebar Discover badge in `App.tsx`
+ * computes the same updates count and must apply the same Library filter, and
+ * importing this hook from the app shell would pull the store data layer into
+ * the eager App chunk. Re-exported here so existing importers (the predicate's
+ * test) keep their path.
  */
-export function keepInLibrary(
-  app: Pick<InstalledApp, 'origin' | 'enabled' | 'manifest'>,
-): boolean {
-  return !(app.origin === 'builtin' && !app.enabled && !app.manifest?.ui?.overlays?.length)
-}
+export { keepInLibrary }
 
 /**
  * Announce an install-state change to the app shell.
@@ -205,6 +198,8 @@ export type AppsData = {
   installedApps: LibraryApp[]
   /** Library apps Update All would touch (gateway-lifecycle with a pending update). */
   updatables: LibraryApp[]
+  /** name → new version for every registry row with an update available. */
+  updateMap: Map<string, string>
   /** Dispatch mc:apps-changed (module-level function, re-exported for convenience). */
   announceAppsChanged: () => void
 }
@@ -474,10 +469,7 @@ export default function useAppsData(): AppsData {
 
   // ---- Library data --------------------------------------------------------
 
-  const updateMap = useMemo(
-    () => new Map(registry.filter(r => r.updateAvailable).map(r => [r.name, r.version])),
-    [registry],
-  )
+  const updateMap = useMemo(() => buildUpdateMap(registry), [registry])
   const installedApps: LibraryApp[] = useMemo(
     () =>
       apps
@@ -490,7 +482,7 @@ export default function useAppsData(): AppsData {
     [apps, updateMap],
   )
   const updatables = useMemo(
-    () => installedApps.filter(a => updateMap.has(a.name) && a.lifecycle === 'gateway'),
+    () => installedApps.filter(a => isUpdatable(a, updateMap)),
     [installedApps, updateMap],
   )
 
@@ -507,6 +499,7 @@ export default function useAppsData(): AppsData {
     sources,
     installedApps,
     updatables,
+    updateMap,
     announceAppsChanged,
   }
 }
